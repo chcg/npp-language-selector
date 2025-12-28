@@ -9,7 +9,10 @@ This plug-in allows you to do that easily, and in addition, to access your favou
 • Select programming language from drop-down menu.\
 • Auto-show selection dialogue on new tabs (can be turned off).\
 • Pin favourite languages on top of the list for quick access (when favourites are full, the oldest one (first in) is put out).\
-• Configurable favourite list size.\
+• Configurable favourite list size.
+### How to use
+For **64-bit** computers, decompress the archive **Language_Selector_v1.0_x64.7z** from the release section, and copy the folder inside (Language Selector) to the Plugin' directory of Notepad++.\
+The same goes for older **32-bit** computers, but using the **Language_Selector_v1.0_x86.7z** file instead.
 ### Feedback
 The author gladly welcomes your feedback and suggestions here:\
 hassaine_abdellah@univ-blida.dz
