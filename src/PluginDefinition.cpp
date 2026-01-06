@@ -91,7 +91,7 @@ struct Language {                       // Structure representing a language
 
 	wstring GetDisplayName() const {    // Get display name with star for favorites
 		if (isFavorite) {               // If language is a favorite
-			return L"★ " + displayName; // Return name with star prefix
+			return L"'★' " + displayName; // Return name with star prefix
 		}
 		return displayName;             // Return name
 	}
@@ -563,7 +563,7 @@ INT_PTR CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) {  // La
 			Language& lang = allLanguages[actualIdx];  // Get language reference
 
 			if (!lang.isFavorite && favoriteCount > 0 && displayIdx == favoriteCount) {  // Add separator after favorites
-				SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)L"────────────");  // Add separator string
+				SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)L"_________________");  // Add separator string
 				int separatorIndex = displayIdx;  // Store separator index
 				SendMessage(hCombo, CB_SETITEMDATA, separatorIndex, (LPARAM)-10);  // Mark as separator
 				separatorAdded = separatorIndex;  // Update separator flag
@@ -989,3 +989,4 @@ extern "C" __declspec(dllexport) BOOL isUnicode() {  // Unicode support check
 }
 
 #endif
+
