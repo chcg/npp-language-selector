@@ -987,4 +987,5 @@ extern "C" __declspec(dllexport) LRESULT messageProc(UINT /*Message*/,  // Messa
 extern "C" __declspec(dllexport) BOOL isUnicode() {  // Unicode support check
 	return TRUE;                          // Plugin supports Unicode
 }
+
 #endif
