@@ -13,7 +13,7 @@
 #include <string>                       // C++ string library
 #include <vector>                       // C++ vector container
 #include <algorithm>                    // C++ algorithms (sort, remove)
-#include <ctime>                        // C++ time functions (to implement the FIFO principle in favorites)
+#include <ctime>                        // C++ time functions (to implement the FIFO principle when favorites are full)
 #include <fstream>                      // C++ file stream operations
 #include <sstream>                      // C++ string stream operations
 #include <commctrl.h>                   // Windows common controls
@@ -29,8 +29,9 @@ HINSTANCE g_hInstance = NULL;           // DLL instance handle
 NppData nppData;                        // Notepad++ data structure
 
 static std::vector<int> g_shownBuffers; // Track buffers where selection dialog was shown
-
-static bool g_isShuttingDown = false;
+static HFONT hFont = NULL;     // normal font
+static HFONT hBoldFont = NULL;     // Bold font for favorites
+static bool g_isShuttingDown = false; //default state for npp shutting down 
 #define CONFIG_FILE L"LanguageSelector.ini"  // Configuration filename
 
 #define DEFAULT_FAV_LIMIT 5             // Default maximum favorites count
@@ -91,7 +92,8 @@ struct Language {                       // Structure representing a language
 
 	wstring GetDisplayName() const {    // Get display name with star for favorites
 		if (isFavorite) {               // If language is a favorite
-			return L"'★' " + displayName; // Return name with star prefix
+			return L"★ " + displayName; // Return name with star prefix
+
 		}
 		return displayName;             // Return name
 	}
@@ -286,7 +288,7 @@ void LoadConfiguration() {
 
 		// Apply saved favorites
 		if (!favoriteIDs.empty()) {
-			// First, clear all favorites
+			// clear all favorites
 			for (auto& lang : allLanguages) {
 				lang.isFavorite = false;
 				lang.favoriteTime = 0;
@@ -415,7 +417,7 @@ INT_PTR CALLBACK SettingsDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) 
 
 	switch (msg) {                      // Handle window messages
 	case WM_INITDIALOG: {               // Dialog initialization
-		HFONT hFont = NULL;                  // Custom font
+
 		NONCLIENTMETRICS ncm = { sizeof(ncm) };  // System metrics
 		if (SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0)) {  // Get metrics
 			hFont = CreateFontIndirect(&ncm.lfMessageFont);  // Create system font
@@ -427,7 +429,6 @@ INT_PTR CALLBACK SettingsDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) 
 			hwnd, NULL, g_hInstance, NULL);  // Parent and instance
 		 SendMessage(hLimitLabel, WM_SETFONT, (WPARAM)hFont, TRUE);  // Set font if available
 
-		// Create combo box instead of edit control
 		hLimitCombo = CreateWindowEx(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",  // Create combo box
 			WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | CBS_HASSTRINGS,  // Window styles
 			180, 12, 50, 200,           // Position and size
@@ -446,7 +447,7 @@ INT_PTR CALLBACK SettingsDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) 
 		SendMessage(hLimitCombo, CB_SETCURSEL, selectIndex, 0);
 
 
-		hAutoShowCheck = CreateCheckbox(hwnd, L"Shows automatically on new tabs",  // Create checkbox
+		hAutoShowCheck = CreateCheckbox(hwnd, L"Show automatically on new tabs",  // Create checkbox
 			20, 45, 250, 25, IDC_AUTO_SHOW_CHECK);  // Position, size, ID
 		 SendMessage(hAutoShowCheck, WM_SETFONT, (WPARAM)hFont, TRUE);  // Set font
 
@@ -458,7 +459,7 @@ INT_PTR CALLBACK SettingsDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) 
 		 SendMessage(hApplyBtn, WM_SETFONT, (WPARAM)hFont, TRUE);  // Set font
 
 		HWND hCancelBtn = CreateButton(hwnd, L"Cancel",  // Create Cancel button
-			170, 80, 80, 32, IDC_CANCEL_BTN);  // Position, size, ID
+			150, 80, 80, 32, IDC_CANCEL_BTN);  // Position, size, ID
 		 SendMessage(hCancelBtn, WM_SETFONT, (WPARAM)hFont, TRUE);  // Set font
 
 		originalLimit = g_maxFavorites;   // Store original limit
@@ -471,7 +472,7 @@ INT_PTR CALLBACK SettingsDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) 
 		int dialogWidth = rc.right - rc.left;  // Calculate dialog width
 		int dialogHeight = rc.bottom - rc.top; // Calculate dialog height
 		int x = (screenWidth - dialogWidth) / 2;  // Center X position
-		int y = (screenHeight - dialogHeight) / 2; // Center Y position
+		int y = (screenHeight - dialogHeight) / 4; // Y position towrads the screen top
 		SetWindowPos(hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);  // Center dialog
 
 
@@ -518,7 +519,7 @@ INT_PTR CALLBACK SettingsDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) 
 	return FALSE;                             // Message not handled
 }
 
-INT_PTR CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) {  // Language dialog procedure
+INT_PTR CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {  // Language dialog procedure
 	static HWND hCombo = NULL;               // Combo box control
 	static HWND hCheckFavorite = NULL;       // Favorite checkbox
 	static int currentDisplayIndex = -1;     // Current selected display index
@@ -534,24 +535,32 @@ INT_PTR CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) {  // La
 		UpdateDisplayOrder();                 // Update display order
 
 		SetWindowText(hwnd, L"Select Language");  // Set dialog title
-		HFONT hFont = NULL;                  // Custom font
+
 		NONCLIENTMETRICS ncm = { sizeof(ncm) };  // System metrics
 		if (SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0)) {  // Get metrics
 			hFont = CreateFontIndirect(&ncm.lfMessageFont);  // Create system font
 		}
+		if (hFont) {
+			LOGFONT lf;
+			GetObject(hFont, sizeof(LOGFONT), &lf);
+			lf.lfWeight = FW_BOLD;
+			lf.lfHeight = (int)(lf.lfHeight * 1.2);  // list font 20% larger
+			lf.lfWidth = (int)(lf.lfWidth * 1.2);
+			hBoldFont = CreateFontIndirect(&lf);
+		}
 
-
-		wstring labelText = L"Select language for current tab:";  // Label text
+		wstring labelText = L"Select programming language for current tab:";  // Label text
 		HWND hLabel = CreateWindow(L"STATIC", labelText.c_str(),  // Create label
 			WS_CHILD | WS_VISIBLE | SS_LEFT,  // Window styles
 			20, 20, 400, 25,            // Position and size
 			hwnd, (HMENU)IDC_STATIC_LABEL, g_hInstance, NULL);  // Parent and ID
 		 SendMessage(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);  // Set font
 
-		hCombo = CreateWindowEx(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",  // Create combo box
-			WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_VSCROLL,  // Styles
-			20, 50, 150, 100,           // Position and size
-			hwnd, (HMENU)IDC_COMBO_LANG, g_hInstance, NULL);  // Parent and ID
+		 hCombo = CreateWindowEx(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",  // Create combo box
+			 WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | CBS_HASSTRINGS |
+			 CBS_OWNERDRAWFIXED | WS_VSCROLL,  // Add CBS_OWNERDRAWFIXED
+			 20, 50, 230, 200,           // Position and size
+			 hwnd, (HMENU)IDC_COMBO_LANG, g_hInstance, NULL);  // Parent and ID
 
 		 SendMessage(hCombo, WM_SETFONT, (WPARAM)hFont, TRUE);  // Set font
 		 SendMessage(hCombo, CB_SETMINVISIBLE, (WPARAM)10, 0);
@@ -563,7 +572,7 @@ INT_PTR CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) {  // La
 			Language& lang = allLanguages[actualIdx];  // Get language reference
 
 			if (!lang.isFavorite && favoriteCount > 0 && displayIdx == favoriteCount) {  // Add separator after favorites
-				SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)L"_________________");  // Add separator string
+				SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)L"────────────");  // Add separator string
 				int separatorIndex = displayIdx;  // Store separator index
 				SendMessage(hCombo, CB_SETITEMDATA, separatorIndex, (LPARAM)-10);  // Mark as separator
 				separatorAdded = separatorIndex;  // Update separator flag
@@ -595,7 +604,7 @@ INT_PTR CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) {  // La
 		}
 
 		hCheckFavorite = CreateCheckbox(hwnd, L"Favorite",  // Create favorite checkbox
-			200, 40, 70, 50, IDC_CHECK_FAVORITE);  // Position, size, ID
+			280, 40, 70, 50, IDC_CHECK_FAVORITE);  // Position, size, ID
 		 SendMessage(hCheckFavorite, WM_SETFONT, (WPARAM)hFont, TRUE);  // Set font
 
 		if (currentDisplayIndex >= 0) {     // If item selected
@@ -612,11 +621,11 @@ INT_PTR CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) {  // La
 		}
 
 		HWND hOkButton = CreateButton(hwnd, L"OK",  // Create OK button
-			50, 100, 80, 32, IDOK);         // Position, size, ID
+			80, 95, 80, 32, IDOK);         // Position, size, ID
 		 SendMessage(hOkButton, WM_SETFONT, (WPARAM)hFont, TRUE);  // Set font
 
 		HWND hCancelButton = CreateButton(hwnd, L"Cancel",  // Create Cancel button
-			170, 100, 80, 32, IDCANCEL);    // Position, size, ID
+			220, 95, 80, 32, IDCANCEL);    // Position, size, ID
 		 SendMessage(hCancelButton, WM_SETFONT, (WPARAM)hFont, TRUE);  // Set font
 
 		RECT rc;                            // Dialog rectangle
@@ -626,13 +635,20 @@ INT_PTR CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) {  // La
 		int dialogWidth = rc.right - rc.left;  // Dialog width
 		int dialogHeight = rc.bottom - rc.top; // Dialog height
 		int x = (screenWidth - dialogWidth) / 2;  // Center X
-		int y = (screenHeight - dialogHeight) / 2; // Center Y
+		int y = (screenHeight - dialogHeight) / 4; //  Y position towrads the screen top
 		SetWindowPos(hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);  // Center dialog
 
 
 		return TRUE;                        // Initialization successful
 	}
-
+case WM_MEASUREITEM: {
+	MEASUREITEMSTRUCT* pItemMetrics = (MEASUREITEMSTRUCT*)lParam;
+	if (pItemMetrics->CtlID == IDC_COMBO_LANG) {
+		pItemMetrics->itemHeight = 25;  // Increased line spacing
+		return TRUE;
+	}
+	break;
+}
 	case WM_COMMAND: {                      // Handle command messages
 		WORD id = LOWORD(wParam);           // Control ID
 		WORD code = HIWORD(wParam);         // Notification code
@@ -768,6 +784,86 @@ INT_PTR CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM) {  // La
 
 		break;                              // Break from switch
 	}
+	case WM_DRAWITEM: {
+		LPDRAWITEMSTRUCT dis = (LPDRAWITEMSTRUCT)lParam;
+		if (dis->CtlID == IDC_COMBO_LANG) {
+			if (dis->itemID == -1) return FALSE;  // No item
+
+			// Get item data
+			wchar_t buffer[256];
+			SendMessage(dis->hwndItem, CB_GETLBTEXT, dis->itemID, (LPARAM)buffer);
+
+			// Get item data (language ID)
+			LRESULT langID = SendMessage(dis->hwndItem, CB_GETITEMDATA, dis->itemID, 0);
+
+			// Check if this is a separator
+			if (langID == -10) {
+				// Draw separator line
+				HPEN hPen = CreatePen(PS_SOLID, 1, RGB(160, 160, 160));
+				HPEN hOldPen = (HPEN)SelectObject(dis->hDC, hPen);
+
+				int y = dis->rcItem.top + (dis->rcItem.bottom - dis->rcItem.top) / 2;
+				MoveToEx(dis->hDC, dis->rcItem.left + 5, y, NULL);
+				LineTo(dis->hDC, dis->rcItem.right - 5, y);
+
+				SelectObject(dis->hDC, hOldPen);
+				DeleteObject(hPen);
+				return TRUE;
+			}
+
+			// Draw item background
+			HBRUSH hBrush;
+			if (dis->itemState & ODS_SELECTED) {
+				hBrush = CreateSolidBrush(GetSysColor(COLOR_HIGHLIGHT));
+				SetTextColor(dis->hDC, GetSysColor(COLOR_HIGHLIGHTTEXT));
+			}
+			else {
+				hBrush = CreateSolidBrush(GetSysColor(COLOR_WINDOW));
+				SetTextColor(dis->hDC, GetSysColor(COLOR_WINDOWTEXT));
+			}
+
+			FillRect(dis->hDC, &dis->rcItem, hBrush);
+			DeleteObject(hBrush);
+
+			// Check if this is a favorite language
+			bool isFavorite = false;
+			for (const auto& lang : allLanguages) {
+				if (lang.id == langID && lang.isFavorite) {
+					isFavorite = true;
+					break;
+				}
+			}
+
+			// Set appropriate font
+			HFONT hOldFont = NULL;
+			if (isFavorite && hBoldFont) {
+				hOldFont = (HFONT)SelectObject(dis->hDC, hBoldFont);
+			}
+			else {
+				hOldFont = (HFONT)SelectObject(dis->hDC, hFont);
+			}
+
+			// Draw the text
+			SetBkMode(dis->hDC, TRANSPARENT);
+			RECT textRect = dis->rcItem;
+			textRect.left += 3;
+
+			DrawTextW(dis->hDC, buffer, -1, &textRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+			// Restore old font
+			if (hOldFont) {
+				SelectObject(dis->hDC, hOldFont);
+			}
+
+			// Draw focus rectangle if needed
+			if (dis->itemState & ODS_FOCUS) {
+				DrawFocusRect(dis->hDC, &dis->rcItem);
+			}
+
+			return TRUE;
+		}
+		break;
+	}
 
 	case WM_CLOSE:                          // Window close (X button)
 		EndDialog(hwnd, 0);                 // Close dialog
@@ -787,7 +883,7 @@ void ShowLanguageDialog() {                 // Show language selection dialog
 		L"#32770",                          // Dialog class name
 		L"Select Language",                 // Window title
 		WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME,  // Window styles
-		CW_USEDEFAULT, CW_USEDEFAULT, 320, 200,  // Position and size
+		CW_USEDEFAULT, CW_USEDEFAULT, 390, 180,  // Position and size
 		nppData._nppHandle,                // Parent window (Notepad++)
 		NULL,                              // No menu
 		g_hInstance,                       // Instance handle
@@ -856,8 +952,8 @@ void About() {
 	config.pszMainInstruction = L"Language Selector Plugin";
 
 	config.pszContent =
-		L"Version: 1.0\n"
-		L"Copyright © Abdellah Hassaine, December 2025\n\n"//28th of Dec precisely, Algiers, at my desk.
+		L"Version: 1.1\n"
+		L"Copyright © Abdellah Hassaine, January 2026\n\n"//11th precisely, Algiers, at my desk.
 		L"Website: <a href=\"website\">https://github.com/hassaine-abdellah/npp-language-selector/</a>\n"
 		L"Contact: <a href=\"email\">hassaine_abdellah@univ-blida.dz</a>\n\n"
 		L"Description: This plug-in allows you to quickly select the programming language for the current tab, and by consequence the corresponding syntax highlighting.\n\n"
@@ -989,4 +1085,3 @@ extern "C" __declspec(dllexport) BOOL isUnicode() {  // Unicode support check
 }
 
 #endif
-
